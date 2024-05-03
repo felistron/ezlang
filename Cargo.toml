@@ -1,0 +1,15 @@
+[package]
+name = "ezlang"
+version = "0.1.0"
+edition = "2021"
+default-run = "ezlang"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "test"
+path = "src/test.rs"
+
+[dependencies]
+clap = { version = "4.5.4", features = ["derive"] }
+regex = "1.10.4"
