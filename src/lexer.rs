@@ -37,6 +37,12 @@ pub enum TokenType {
     StringLiteral(String),
     Character(char),
     Identifier(String),
+    Return,
+    If,
+    While,
+    For,
+    True,
+    False,
 }
 
 #[derive(Debug)]
@@ -72,7 +78,7 @@ impl Lexer {
 
         return match self.current_char {
             b'0'..b'9' => Some(self.read_number_like()),
-            b'a'..b'z' | b'A'..b'Z' | b'_' => Some(self.read_label()),
+            b'a'..b'z' | b'A'..b'Z' | b'_' => Some(self.read_identifier()),
             b'"' => Some(self.read_string()),
             b'\'' => Some(self.read_character()),
             _ => {
@@ -190,7 +196,7 @@ impl Lexer {
         };
     }
 
-    fn read_label(&mut self) -> Token {
+    fn read_identifier(&mut self) -> Token {
         let current_position = self.file_position.clone();
 
         let mut buffer: Vec<u8> = Vec::new();
@@ -204,9 +210,35 @@ impl Lexer {
 
         let label = String::from_utf8(buffer).expect("Ut8 error");
 
-        return Token {
-            token_type: TokenType::Identifier(label),
-            position: current_position,
+        return match label.as_str() {
+            "return" => Token {
+                token_type: TokenType::Return,
+                position: current_position,
+            },
+            "if" => Token {
+                token_type: TokenType::If,
+                position: current_position,
+            },
+            "while" => Token {
+                token_type: TokenType::While,
+                position: current_position,
+            },
+            "for" => Token {
+                token_type: TokenType::For,
+                position: current_position,
+            },
+            "true" => Token {
+                token_type: TokenType::True,
+                position: current_position,
+            },
+            "false" => Token {
+                token_type: TokenType::False,
+                position: current_position,
+            },
+            _ => Token {
+                token_type: TokenType::Identifier(label),
+                position: current_position,
+            },
         };
     }
 
