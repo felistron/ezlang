@@ -4,7 +4,17 @@ use std::{collections::HashMap, fs::read_to_string, process::{Command, Stdio}};
 use regex::Regex;
 
 #[derive(Debug, Clone)]
-struct SyntaxError;
+pub struct SyntaxError {
+    position: Position,
+    message: String,
+}
+
+impl fmt::Display for SyntaxError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Syntax error at {}: {}", self.position, self.message)
+    }
+}
+
 
 #[derive(Debug, Clone)]
 pub struct CompileError {
@@ -35,6 +45,12 @@ pub struct Position {
     column: usize,
 }
 
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}:{}:{}", self.file, self.line, self.column)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Token {
     Symbol(Position, String),
@@ -51,6 +67,7 @@ pub enum Token {
     Colon(Position),
     Return(Position),
     Assembly(Position),
+    EOF(Position),
 }
 
 impl Token {
@@ -70,6 +87,7 @@ impl Token {
             Token::Colon(position) => position,
             Token::Return(position) => position,
             Token::Assembly(position) => position,
+            Token::EOF(position) => position,
         }
     }
 }
@@ -99,7 +117,7 @@ pub enum Statement {
 #[derive(Debug)]
 pub struct FunctionDeclaration {
     function_name: String,
-    arguments: Option<Vec<Argument>>,
+    arguments: Vec<Argument>,
     statements: Vec<Statement>,
 }
 
@@ -136,61 +154,105 @@ impl Parser {
         return current;
     }
 
-    pub fn parse(&mut self) -> Program {
-        self.consume();
+    pub fn parse(&mut self) -> Result<Program, SyntaxError> {
+        self.lookahead = self.tokenizer.next();
         return self.program();
     }
 
-    /// program:
-    ///     | function
-    ///     ;
-    fn program(&mut self) -> Program {
+    fn program(&mut self) -> Result<Program, SyntaxError> {
         let mut program = Program::new();
 
-        while self.tokenizer.has_next() {
-            program.functions.push(
-                self.function_declaration()
-            );
+        while let Some(_) = &self.lookahead {
+            if let Some(Token::EOF(_)) = &self.lookahead {
+                self.consume();
+                break;
+            }
+
+            match self.function() {
+                Ok(function) => program.functions.push(function),
+                Err(error) => return Err(error),
+            }
         }
 
         if program.functions.len() < 1 {
-            panic!("PROGRAM CANNOT BE EMPTY");
+            return Err(
+                SyntaxError {
+                    position: Position {
+                        file: self.tokenizer.file.to_owned(),
+                        line: 0,
+                        column: 0
+                    },
+                    message: "Program cannot be empty".to_owned()
+                }
+            );
         }
 
         if !program.functions.iter().any(|func| func.function_name == "main") {
-            panic!("MISSING ENTRY POINT (MAIN FUNCTION)");
+            return Err(
+                SyntaxError {
+                    position: Position {
+                        file: self.tokenizer.file.to_owned(),
+                        line: 0,
+                        column: 0
+                    },
+                    message: "No entry point: Missing main function".to_owned()
+                }
+            );
         }
 
         for (label, string) in &self.string_literals {
             program.string_literals.insert(label.to_owned(), string.to_owned());
         }
 
-        return program;
+        println!("{:#?}", &program);
+
+        return Ok(program);
     }
 
-    fn function_declaration(&mut self) -> FunctionDeclaration {
+    fn function(&mut self) -> Result<FunctionDeclaration, SyntaxError> {
         let token = self.consume();
 
-        if let Some(Token::Symbol(_, function_name)) = token {
+        if let Some(Token::Symbol(position, function_name)) = token {
             let token = self.consume();
 
             if let Some(Token::Colon(_)) = token {
-                return FunctionDeclaration {
-                    function_name,
-                    arguments: self.argument_list_declaration(),
-                    statements: self.function_body(),
-                }
-            } else {
-                let token = token.unwrap();
-                let position = token.get_position();
 
-                panic!("Syntax error: {}:{}:{}", position.file, position.line, position.column);
+                let arguments = match self.argument_list_declaration() {
+                    Ok(arguments) => arguments,
+                    Err(err) => return Err(err)
+                };
+
+                let statements = self.function_body();
+
+                return Ok(FunctionDeclaration {
+                    function_name,
+                    arguments,
+                    statements,
+                });
+            } else {
+                let position = Position {
+                    file: position.file,
+                    line: position.line,
+                    column: position.column + function_name.len() 
+                };
+
+                return Err(
+                    SyntaxError {
+                        position,
+                        message: "Missing token at function declaration".to_owned()
+                    }
+                );
             }
         } else {
             let token = token.unwrap();
             let position = token.get_position();
 
-            panic!("Syntax error: {}:{}:{}", position.file, position.line, position.column);
+            return Err(
+                SyntaxError {
+                    position: position.to_owned(),
+                    message: "Unexpected token at function declaration".to_owned()
+                }
+            );
         }
     }
 
@@ -228,17 +290,15 @@ impl Parser {
         }
     }
 
-    fn argument_list_declaration(&mut self) -> Option<Vec<Argument>> {
+    fn argument_list_declaration(&mut self) -> Result<Vec<Argument>, SyntaxError> {
         let token = self.consume();
         
+        if let Some(Token::OpenParenthesis(_)) = &token {
+            let mut arguments: Vec<Argument> = Vec::new();
 
-        if let Some(Token::OpenParenthesis(_)) = token.clone() {
-            if let Some(Token::CloseParenthesis(_)) = self.lookahead.clone() {
+            if let Some(Token::CloseParenthesis(_)) = &self.lookahead {
                 self.consume();
-                return None;
-            } else if let Some(Token::Symbol(_, _)) = self.lookahead.clone() {
-                let mut arguments: Vec<Argument> = Vec::new();
-
+            } else if let Some(Token::Symbol(_, _)) = &self.lookahead {
                 while let Some(Token::Symbol(_, argument_name)) = self.consume() {
                     arguments.push(Argument { name: argument_name });
 
@@ -250,24 +310,39 @@ impl Parser {
                         break;
                     } else {
                         let token = token.unwrap();
-                        let position = token.get_position();
+                        let position = token.get_position().to_owned();
 
-                        panic!("Syntax error: {}:{}:{}", position.file, position.line, position.column);   
+                        return Err(
+                            SyntaxError {
+                                position: position,
+                                message: "No se weey".to_owned()
+                            }
+                        );
                     }
                 }
-
-                return Some(arguments);
             } else {
                 let token = token.unwrap();
-                let position = token.get_position();
+                let position = token.get_position().to_owned();
 
-                panic!("Syntax error: {}:{}:{}", position.file, position.line, position.column);    
+                return Err(
+                    SyntaxError {
+                        position,
+                        message: "Unexpected token at function's close argument list declaration".to_owned()
+                    }
+                );
             }
+            
+            return Ok(arguments);
         } else {
             let token = token.unwrap();
-            let position = token.get_position();
+            let position = token.get_position().to_owned();
 
-            panic!("Syntax error: {}:{}:{}", position.file, position.line, position.column);
+            return Err(
+                SyntaxError {
+                    position,
+                    message: "Unexpected token at function's argument list declaration".to_owned()
+                }
+            );
         }
     }
 
@@ -396,11 +471,19 @@ struct Tokenizer {
     cursor: usize,
     line: usize,
     column: usize,
+    reached_eof: bool,
 }
 
 impl Tokenizer {
     fn new(filename: String, source_code: String) -> Self {
-        return Tokenizer { file: filename, buffer: source_code, cursor: 0, line: 1, column: 1 }
+        return Tokenizer {
+            file: filename,
+            buffer: source_code,
+            cursor: 0,
+            line: 1,
+            column: 1,
+            reached_eof: false,
+        }
     }
 
     fn has_next(&self) -> bool {
@@ -408,11 +491,20 @@ impl Tokenizer {
     }
 
     fn next(&mut self) -> Option<Token> {
-        if !self.has_next() {
+        if self.reached_eof {
             return None;
         }
+        
+        let current_position: Position = Position {
+            file: self.file.to_string(),
+            line: self.line,
+            column: self.column
+        };
 
-        let current_position: Position = Position { file: self.file.to_string(), line: self.line, column: self.column };
+        if !self.has_next() {
+            self.reached_eof = true;
+            return Some(Token::EOF(current_position));
+        }
 
         // White space:
         let re = Regex::new(r"^[\s]").unwrap();
@@ -604,7 +696,10 @@ impl Compiler {
     fn assemble(&mut self, source_code: String) -> Result<String, CompileError> {
         let mut parser: Parser = Parser::new(self.filename.to_owned(), source_code);
 
-        let program = parser.parse();
+        let program = match parser.parse() {
+            Ok(program) => program,
+            Err(error) => return Err(CompileError { message: error.to_string() }),
+        };
 
         let mut buffer: Vec<u8> = Vec::new();
 
@@ -659,16 +754,14 @@ impl Compiler {
 
         let mut function_body: Vec<u8> = Vec::new();
 
-        if let Some(arguments) = &function.arguments {
-            let regs = ["edi", "esi", "edx", "ecx"];
-            let mut count: usize = 0;
+        let regs = ["edi", "esi", "edx", "ecx"];
+        let mut count: usize = 0;
 
-            for argument in arguments {
-                offset += 4;
-                locals.insert(argument.name.as_str(), offset);
-                function_body.extend(format!("\n    mov dword[rbp - {}], {} ; arg: {}", offset, regs[count], argument.name).as_bytes());
-                count += 1;
-            }
+        for argument in &function.arguments {
+            offset += 4;
+            locals.insert(argument.name.as_str(), offset);
+            function_body.extend(format!("\n    mov dword[rbp - {}], {} ; arg: {}", offset, regs[count], argument.name).as_bytes());
+            count += 1;
         }
 
         for statement in &function.statements {
