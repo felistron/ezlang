@@ -1,6 +1,5 @@
 mod lexer;
 
-use clap::Parser;
 use lexer::Lexer;
 
 fn main() {
