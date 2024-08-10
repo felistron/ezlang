@@ -1,0 +1,13 @@
+"hello world 123 !@#"
+
+"new line\n"
+
+"\"escape \\ characters\""
+
+"\ttab space"
+
+"null terminated string\0"
+
+"windows new line \r\n :)"
+
+"foo""bar"

@@ -34,6 +34,7 @@ pub struct Lexer {
 #[derive(Debug)]
 pub enum TokenType {
     NumberLiteral(u64),
+    StringLiteral(String),
     Label(String),
 }
 
@@ -71,6 +72,7 @@ impl Lexer {
         return match self.current_char {
             b'0'..b'9' => Some(self.read_number_like()),
             b'a'..b'z' | b'A'..b'Z' | b'_' => Some(self.read_label()),
+            b'"' => Some(self.read_string()),
             _ => {
                 panic!(
                     "{}:{}:{}: Unkown token",
@@ -103,6 +105,50 @@ impl Lexer {
         while (c as char).is_whitespace() && !self.reached_eof {
             c = self.next_char();
         }
+    }
+
+    fn read_string(&mut self) -> Token {
+        let current_position = self.file_position.clone();
+
+        let mut buffer: Vec<u8> = Vec::new();
+
+        let mut c = self.next_char();
+
+        let mut escape = false;
+
+        while ((c == b'"' && escape) || (c != b'"')) && !self.reached_eof {
+            if escape {
+                match c {
+                    b'"' => buffer.push(b'\"'),
+                    b'n' => buffer.push(b'\n'),
+                    b't' => buffer.push(b'\t'),
+                    b'r' => buffer.push(b'\r'),
+                    b'0' => buffer.push(b'\0'),
+                    b'\\' => buffer.push(b'\\'),
+                    _ => {}
+                }
+                escape = false;
+            } else {
+                if c == b'\\' {
+                    escape = true;
+                } else {
+                    buffer.push(c);
+                }
+            }
+
+            c = self.next_char();
+        }
+
+        self.next_char();
+
+        let label = String::from_utf8(buffer).expect("Ut8 error");
+
+        println!("{}", label);
+
+        return Token {
+            token_type: TokenType::StringLiteral(label),
+            position: current_position,
+        };
     }
 
     fn read_label(&mut self) -> Token {
