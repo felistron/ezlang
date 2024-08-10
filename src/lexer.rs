@@ -34,6 +34,7 @@ pub struct Lexer {
 #[derive(Debug)]
 pub enum TokenType {
     NumberLiteral(u64),
+    Label(String),
 }
 
 #[derive(Debug)]
@@ -69,6 +70,7 @@ impl Lexer {
 
         return match self.current_char {
             b'0'..b'9' => Some(self.read_number_like()),
+            b'a'..b'z' | b'A'..b'Z' | b'_' => Some(self.read_label()),
             _ => {
                 panic!(
                     "{}:{}:{}: Unkown token",
@@ -101,6 +103,26 @@ impl Lexer {
         while (c as char).is_whitespace() && !self.reached_eof {
             c = self.next_char();
         }
+    }
+
+    fn read_label(&mut self) -> Token {
+        let current_position = self.file_position.clone();
+
+        let mut buffer: Vec<u8> = Vec::new();
+
+        let mut c = self.current_char;
+
+        while (c as char).is_alphanumeric() || c == b'_' && !self.reached_eof {
+            buffer.push(c);
+            c = self.next_char();
+        }
+
+        let label = String::from_utf8(buffer).expect("Ut8 error");
+
+        return Token {
+            token_type: TokenType::Label(label),
+            position: current_position,
+        };
     }
 
     fn read_number_like(&mut self) -> Token {
