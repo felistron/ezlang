@@ -35,7 +35,8 @@ pub struct Lexer {
 pub enum TokenType {
     NumberLiteral(u64),
     StringLiteral(String),
-    Label(String),
+    Character(char),
+    Identifier(String),
 }
 
 #[derive(Debug)]
@@ -73,6 +74,7 @@ impl Lexer {
             b'0'..b'9' => Some(self.read_number_like()),
             b'a'..b'z' | b'A'..b'Z' | b'_' => Some(self.read_label()),
             b'"' => Some(self.read_string()),
+            b'\'' => Some(self.read_character()),
             _ => {
                 panic!(
                     "{}:{}:{}: Unkown token",
@@ -107,6 +109,38 @@ impl Lexer {
         }
     }
 
+    fn read_character(&mut self) -> Token {
+        let current_position = self.file_position.clone();
+
+        let mut c = self.next_char();
+
+        if c == b'\\' {
+            match self.next_char() {
+                b'\'' => c = b'\'',
+                b'n' => c = b'\n',
+                b't' => c = b'\t',
+                b'r' => c = b'\r',
+                b'0' => c = b'\0',
+                b'\\' => c = b'\\',
+                _ => {}
+            }
+        }
+
+        if self.next_char() != b'\'' {
+            panic!(
+                "{}:{}:{}: Expected closing character sign",
+                self.filename, current_position.line, current_position.column
+            );
+        }
+
+        self.next_char();
+
+        return Token {
+            token_type: TokenType::Character(c as char),
+            position: current_position,
+        };
+    }
+
     fn read_string(&mut self) -> Token {
         let current_position = self.file_position.clone();
 
@@ -139,11 +173,16 @@ impl Lexer {
             c = self.next_char();
         }
 
+        if c != b'"' {
+            panic!(
+                "{}:{}:{}: Expected closing string sign",
+                self.filename, current_position.line, current_position.column
+            );
+        }
+
         self.next_char();
 
         let label = String::from_utf8(buffer).expect("Ut8 error");
-
-        println!("{}", label);
 
         return Token {
             token_type: TokenType::StringLiteral(label),
@@ -166,7 +205,7 @@ impl Lexer {
         let label = String::from_utf8(buffer).expect("Ut8 error");
 
         return Token {
-            token_type: TokenType::Label(label),
+            token_type: TokenType::Identifier(label),
             position: current_position,
         };
     }
