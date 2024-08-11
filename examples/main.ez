@@ -1,3 +1,20 @@
-main: () {
-    
+foo: (a, b) {
+    return (a - (b * 2 / 3) + 1);
+}
+
+bar: (a, b) {
+    return (a & b) | (a ^ !b);
+}
+
+main: (argc, argv) {
+    msg = "Hello world!\n";
+
+    a = 16#FF0000;
+    b = 16#00FF00;
+
+    c = sub(a, b);
+
+    c = bar(a, b);
+
+    return c;
 }

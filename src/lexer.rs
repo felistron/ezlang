@@ -43,6 +43,22 @@ pub enum TokenType {
     For,
     True,
     False,
+    Colon,
+    Semicolon,
+    LeftPar,
+    RightPar,
+    LeftBrace,
+    RightBrace,
+    BinaryAdd,
+    BinarySub,
+    Equals,
+    BinaryDiv,
+    BinaryMul,
+    Comma,
+    BinaryAnd,
+    BinaryOr,
+    BinaryXor,
+    UnaryNot,
 }
 
 #[derive(Debug)]
@@ -77,8 +93,24 @@ impl Lexer {
         }
 
         return match self.current_char {
-            b'0'..b'9' => Some(self.read_number_like()),
-            b'a'..b'z' | b'A'..b'Z' | b'_' => Some(self.read_identifier()),
+            b':' => Some(self.read_colon()),
+            b'(' => Some(self.read_l_par()),
+            b')' => Some(self.read_r_par()),
+            b'{' => Some(self.read_l_brace()),
+            b'}' => Some(self.read_r_brace()),
+            b';' => Some(self.read_semicolon()),
+            b'+' => Some(self.read_add()),
+            b'-' => Some(self.read_sub()),
+            b'=' => Some(self.read_equals()),
+            b'/' => Some(self.read_div()),
+            b'*' => Some(self.read_mul()),
+            b',' => Some(self.read_comma()),
+            b'&' => Some(self.read_and()),
+            b'|' => Some(self.read_or()),
+            b'^' => Some(self.read_xor()),
+            b'!' => Some(self.read_not()),
+            b'0'..=b'9' => Some(self.read_number_like()),
+            b'a'..=b'z' | b'A'..b'Z' | b'_' => Some(self.read_identifier()),
             b'"' => Some(self.read_string()),
             b'\'' => Some(self.read_character()),
             _ => {
@@ -113,6 +145,150 @@ impl Lexer {
         while (c as char).is_whitespace() && !self.reached_eof {
             c = self.next_char();
         }
+    }
+
+    fn read_not(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::UnaryNot,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_xor(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::BinaryXor,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_or(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::BinaryOr,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_and(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::BinaryAnd,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_div(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::BinaryDiv,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_mul(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::BinaryMul,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_comma(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::Comma,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_equals(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::Equals,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_sub(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::BinarySub,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_add(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::BinaryAdd,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_r_brace(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::RightBrace,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_l_brace(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::LeftBrace,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_r_par(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::RightPar,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_l_par(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::LeftPar,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_semicolon(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::Semicolon,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
+    }
+
+    fn read_colon(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::Colon,
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
     }
 
     fn read_character(&mut self) -> Token {
@@ -316,12 +492,12 @@ impl Lexer {
 
         while (c as char).is_alphanumeric() && !self.reached_eof {
             let value = match c {
-                b'0'..b'9' => c - b'0',
-                b'A'..b'F' => 10 + c - b'A',
-                b'a'..b'f' => 10 + c - b'a',
+                b'0'..=b'9' => c - b'0',
+                b'A'..=b'F' => 10 + c - b'A',
+                b'a'..=b'f' => 10 + c - b'a',
                 _ => {
                     panic!(
-                        "{}:{}:{}: Invalid octal number",
+                        "{}:{}:{}: Invalid hexadecimal number",
                         self.filename, self.file_position.line, self.file_position.column
                     );
                 }
