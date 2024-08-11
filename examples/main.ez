@@ -14,7 +14,7 @@ main: (argc, argv) {
 
     c = sub(a, b);
 
-    c = bar(a, b);
+    c = bar(a, b--);
 
-    return c;
+    return c++;
 }

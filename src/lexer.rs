@@ -59,6 +59,8 @@ pub enum TokenType {
     BinaryOr,
     BinaryXor,
     UnaryNot,
+    UnaryInc,
+    UnaryDec,
 }
 
 #[derive(Debug)]
@@ -220,21 +222,43 @@ impl Lexer {
     }
 
     fn read_sub(&mut self) -> Token {
-        let token = Token {
-            token_type: TokenType::BinarySub,
-            position: self.file_position.clone(),
+        let current_position = self.file_position.clone();
+
+        let c = self.next_char();
+
+        return if c == b'-' {
+            self.next_char();
+
+            Token {
+                token_type: TokenType::UnaryDec,
+                position: current_position,
+            }
+        } else {
+            Token {
+                token_type: TokenType::BinarySub,
+                position: self.file_position.clone(),
+            }
         };
-        self.next_char();
-        return token;
     }
 
     fn read_add(&mut self) -> Token {
-        let token = Token {
-            token_type: TokenType::BinaryAdd,
-            position: self.file_position.clone(),
+        let current_position = self.file_position.clone();
+
+        let c = self.next_char();
+
+        return if c == b'+' {
+            self.next_char();
+
+            Token {
+                token_type: TokenType::UnaryInc,
+                position: current_position,
+            }
+        } else {
+            Token {
+                token_type: TokenType::BinaryAdd,
+                position: self.file_position.clone(),
+            }
         };
-        self.next_char();
-        return token;
     }
 
     fn read_r_brace(&mut self) -> Token {
