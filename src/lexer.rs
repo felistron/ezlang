@@ -1,10 +1,9 @@
-use core::panic;
 use std::{fs::File, io::Read};
 
 #[derive(Debug, Clone)]
 pub struct Position {
-    line: usize,
-    column: usize,
+    pub line: usize,
+    pub column: usize,
 }
 
 impl Position {
@@ -23,15 +22,15 @@ impl Position {
 }
 
 pub struct Lexer {
-    filename: String,
-    data: Vec<u8>,
+    pub filename: String,
+    pub data: Vec<u8>,
     position: usize,
     current_char: u8,
     reached_eof: bool,
-    file_position: Position,
+    pub file_position: Position,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TokenType {
     NumberLiteral(u64),
     StringLiteral(String),
@@ -63,10 +62,10 @@ pub enum TokenType {
     UnaryDec,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token {
-    token_type: TokenType,
-    position: Position,
+    pub token_type: TokenType,
+    pub position: Position,
 }
 
 impl Lexer {
@@ -125,6 +124,8 @@ impl Lexer {
     }
 
     fn next_char(&mut self) -> u8 {
+        let prev_position = self.file_position.clone();
+
         if self.current_char == b'\n' {
             self.file_position.new_line();
         } else {
@@ -135,6 +136,7 @@ impl Lexer {
             self.position += 1;
             self.current_char = self.data[self.position];
         } else {
+            self.file_position = prev_position;
             self.reached_eof = true;
         }
 

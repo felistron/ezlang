@@ -1,12 +1,14 @@
 mod lexer;
+mod parser;
 
-use lexer::Lexer;
+use parser::Parser;
 
 fn main() {
-    let mut lexer = Lexer::from_file("examples/main.ez");
-    while let Some(token) = lexer.next() {
-        println!("{:#?}", token);
-    }
+    let mut parser = Parser::from_file("examples/basic.ez");
 
-    println!("No more tokens found");
+    parser.generate_tokens();
+
+    let program = parser.generate_program();
+
+    println!("{:#?}", program);
 }
