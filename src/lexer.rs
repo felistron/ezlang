@@ -31,6 +31,27 @@ pub struct Lexer {
 }
 
 #[derive(Debug, Clone)]
+pub enum BinaryOperator {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
+}
+
+impl BinaryOperator {
+    pub fn get_precedence(&self) -> u8 {
+        return match self {
+            Self::BitwiseAnd | Self::BitwiseOr | Self::BitwiseXor => 0,
+            Self::Add | Self::Sub => 1,
+            Self::Mul | Self::Div => 2,
+        };
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum TokenType {
     NumberLiteral(u64),
     StringLiteral(String),
@@ -48,18 +69,12 @@ pub enum TokenType {
     RightPar,
     LeftBrace,
     RightBrace,
-    BinaryAdd,
-    BinarySub,
     Equals,
-    BinaryDiv,
-    BinaryMul,
     Comma,
-    BinaryAnd,
-    BinaryOr,
-    BinaryXor,
     UnaryNot,
     UnaryInc,
     UnaryDec,
+    BinaryOperation(BinaryOperator),
 }
 
 #[derive(Debug, Clone)]
@@ -162,7 +177,7 @@ impl Lexer {
 
     fn read_xor(&mut self) -> Token {
         let token = Token {
-            token_type: TokenType::BinaryXor,
+            token_type: TokenType::BinaryOperation(BinaryOperator::BitwiseXor),
             position: self.file_position.clone(),
         };
         self.next_char();
@@ -171,7 +186,7 @@ impl Lexer {
 
     fn read_or(&mut self) -> Token {
         let token = Token {
-            token_type: TokenType::BinaryOr,
+            token_type: TokenType::BinaryOperation(BinaryOperator::BitwiseOr),
             position: self.file_position.clone(),
         };
         self.next_char();
@@ -180,7 +195,7 @@ impl Lexer {
 
     fn read_and(&mut self) -> Token {
         let token = Token {
-            token_type: TokenType::BinaryAnd,
+            token_type: TokenType::BinaryOperation(BinaryOperator::BitwiseAnd),
             position: self.file_position.clone(),
         };
         self.next_char();
@@ -189,7 +204,7 @@ impl Lexer {
 
     fn read_div(&mut self) -> Token {
         let token = Token {
-            token_type: TokenType::BinaryDiv,
+            token_type: TokenType::BinaryOperation(BinaryOperator::Div),
             position: self.file_position.clone(),
         };
         self.next_char();
@@ -198,7 +213,7 @@ impl Lexer {
 
     fn read_mul(&mut self) -> Token {
         let token = Token {
-            token_type: TokenType::BinaryMul,
+            token_type: TokenType::BinaryOperation(BinaryOperator::Mul),
             position: self.file_position.clone(),
         };
         self.next_char();
@@ -237,8 +252,8 @@ impl Lexer {
             }
         } else {
             Token {
-                token_type: TokenType::BinarySub,
-                position: self.file_position.clone(),
+                token_type: TokenType::BinaryOperation(BinaryOperator::Sub),
+                position: current_position,
             }
         };
     }
@@ -257,8 +272,8 @@ impl Lexer {
             }
         } else {
             Token {
-                token_type: TokenType::BinaryAdd,
-                position: self.file_position.clone(),
+                token_type: TokenType::BinaryOperation(BinaryOperator::Add),
+                position: current_position,
             }
         };
     }

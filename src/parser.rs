@@ -1,4 +1,4 @@
-use crate::lexer::{Lexer, Token, TokenType};
+use crate::lexer::{BinaryOperator, Lexer, Token, TokenType};
 
 #[derive(Debug)]
 pub struct Local {
@@ -10,7 +10,37 @@ pub struct Local {
 pub struct Function {
     name: String,
     arguments: Vec<Local>,
+    body: Scope,
+}
+
+#[derive(Debug)]
+pub struct Scope {
     locals: Vec<Local>,
+    statements: Vec<Statement>,
+}
+
+#[derive(Debug)]
+pub enum Statement {
+    Assign(Local, Expression),
+    If(Expression, Scope),
+    While(Expression, Scope),
+    For(Expression, Scope),
+    Return(Expression),
+    Expression,
+    Call(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct BinaryExpression {
+    operator: BinaryOperator,
+    left: Box<Expression>,
+    right: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Expression {
+    NumberLiteral(u64),
+    Binary(BinaryExpression),
 }
 
 #[derive(Debug)]
@@ -101,12 +131,8 @@ impl Parser {
                 let function = Some(Function {
                     name: function_name,
                     arguments: self.next_args(),
-                    locals: Vec::new(),
+                    body: self.next_scope(),
                 });
-
-                self.next_l_brace();
-
-                self.next_r_brace();
 
                 return function;
             } else {
@@ -199,6 +225,222 @@ impl Parser {
         } else {
             panic!(
                 "{}:{}:{}: Reached end of file",
+                self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
+            );
+        }
+    }
+
+    fn next_scope(&mut self) -> Scope {
+        self.next_l_brace();
+
+        let mut statements: Vec<Statement> = Vec::new();
+        let locals: Vec<Local> = Vec::new();
+
+        while let Some(statement) = self.next_statement() {
+            statements.push(statement);
+        }
+
+        self.next_r_brace();
+
+        return Scope { locals, statements };
+    }
+
+    fn next_statement(&mut self) -> Option<Statement> {
+        if let Some(token) = self.lookahead_token.clone() {
+            match token.token_type {
+                TokenType::Return => {
+                    self.next_token();
+                    return Some(self.next_return());
+                }
+                TokenType::RightBrace => {
+                    return None;
+                }
+                _ => {
+                    panic!(
+                        "{}:{}:{}: Unexpected token.",
+                        self.lexer.filename, token.position.line, token.position.column
+                    );
+                }
+            }
+        } else {
+            panic!(
+                "{}:{}:{}: Expected statement but found end of file.",
+                self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
+            );
+        }
+    }
+
+    fn next_return(&mut self) -> Statement {
+        let statement = Statement::Return(self.next_expression());
+
+        self.next_semicolon();
+
+        return statement;
+    }
+
+    fn next_expression(&mut self) -> Expression {
+        let mut queue: Vec<Token> = Vec::new();
+
+        let mut stack: Vec<Token> = Vec::new();
+
+        while let Some(token) = self.lookahead_token.clone() {
+            match &token.token_type {
+                TokenType::NumberLiteral(_) => {
+                    if let Some(current_token) = &self.current_token {
+                        if let TokenType::NumberLiteral(_) = current_token.token_type {
+                            panic!(
+                                "{}:{}:{}: Invalid expression.",
+                                self.lexer.filename, token.position.line, token.position.column
+                            );
+                        }
+                    } else {
+                        panic!("Unreachable");
+                    }
+                    queue.push(token);
+                }
+                TokenType::BinaryOperation(operator) => {
+                    if let Some(current_token) = &self.current_token {
+                        if let TokenType::BinaryOperation(_) = current_token.token_type {
+                            panic!(
+                                "{}:{}:{}: Invalid expression.",
+                                self.lexer.filename, token.position.line, token.position.column
+                            );
+                        }
+                    } else {
+                        panic!("Unreachable");
+                    }
+
+                    let current_precedence = operator.get_precedence();
+
+                    while let Some(token) = stack.last() {
+                        match &token.token_type {
+                            TokenType::BinaryOperation(operator) => {
+                                let top_precedence = operator.get_precedence();
+
+                                if top_precedence > current_precedence {
+                                    queue.push(stack.pop().unwrap());
+                                } else {
+                                    break;
+                                }
+                            }
+                            TokenType::LeftPar => {
+                                break;
+                            }
+                            _ => {
+                                panic!("Unreachable");
+                            }
+                        }
+                    }
+
+                    stack.push(token);
+                }
+                TokenType::LeftPar => {
+                    stack.push(token);
+                }
+                TokenType::RightPar => {
+                    let mut reached_left_par = false;
+
+                    while let Some(token) = stack.pop() {
+                        match &token.token_type {
+                            TokenType::LeftPar => {
+                                reached_left_par = true;
+                                break;
+                            }
+                            TokenType::BinaryOperation(_) => queue.push(token),
+                            _ => {
+                                panic!("Unreachable");
+                            }
+                        }
+                    }
+
+                    if !reached_left_par {
+                        panic!(
+                            "{}:{}:{}: Unmatched parenthesis.",
+                            self.lexer.filename, token.position.line, token.position.column
+                        );
+                    }
+                }
+                TokenType::Semicolon | TokenType::Comma => {
+                    while let Some(token) = stack.pop() {
+                        if let TokenType::LeftPar | TokenType::RightPar = token.token_type {
+                            panic!(
+                                "{}:{}:{}: Unmatched parentheses.",
+                                self.lexer.filename, token.position.line, token.position.column
+                            );
+                        }
+                        queue.push(token);
+                    }
+
+                    let mut expressions: Vec<Expression> = Vec::new();
+
+                    for token in queue.iter() {
+                        match &token.token_type {
+                            TokenType::NumberLiteral(number) => {
+                                expressions.push(Expression::NumberLiteral(*number));
+                            }
+                            TokenType::BinaryOperation(operator) => {
+                                if let (Some(right), Some(left)) =
+                                    (expressions.pop(), expressions.pop())
+                                {
+                                    expressions.push(Expression::Binary(BinaryExpression {
+                                        operator: operator.clone(),
+                                        left: Box::new(left),
+                                        right: Box::new(right),
+                                    }));
+                                } else {
+                                    panic!(
+                                        "{}:{}:{}: Missing operator.",
+                                        self.lexer.filename,
+                                        token.position.line,
+                                        token.position.column
+                                    );
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    if expressions.len() == 0 {
+                        panic!(
+                            "{}:{}:{}: Missing expression.",
+                            self.lexer.filename, token.position.line, token.position.column
+                        );
+                    }
+
+                    assert!(expressions.len() == 1);
+
+                    return expressions.last().unwrap().to_owned();
+                }
+                _ => {
+                    panic!(
+                        "{}:{}:{}: Unexpected token.",
+                        self.lexer.filename, token.position.line, token.position.column
+                    );
+                }
+            };
+
+            self.next_token();
+        }
+
+        panic!(
+            "{}:{}:{}: Expected expression but found end of file.",
+            self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
+        );
+    }
+
+    fn next_semicolon(&mut self) {
+        if let Some(token) = self.next_token() {
+            if let TokenType::Semicolon = token.token_type {
+                return;
+            } else {
+                panic!(
+                    "{}:{}:{}: Expected a semicolon.",
+                    self.lexer.filename, token.position.line, token.position.column
+                );
+            }
+        } else {
+            panic!(
+                "{}:{}:{}: Expected a semicolon but reached end of file.",
                 self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
             );
         }
