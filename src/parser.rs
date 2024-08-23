@@ -50,7 +50,6 @@ pub struct Function {
     body: Scope,
 }
 
-// TODO: Save scope locals
 #[derive(Debug)]
 pub struct Scope {
     statements: Vec<Statement>,
@@ -74,6 +73,7 @@ pub enum Expression {
     NumberLiteral(u64),
     Binary(BinaryExpression),
     Local(usize),
+    Call(usize, Vec<Expression>),
 }
 
 #[derive(Debug)]
@@ -149,21 +149,26 @@ impl Parser {
     fn next_program(&mut self) -> Program {
         let mut program = Program::new();
 
-        while let Some(function) = self.next_function() {
-            program.functions.push(function);
+        let mut functions: Vec<Function> = Vec::new();
+
+        while let Some(function) = self.next_function(&mut functions) {
+            // TODO: Think about another way of storing functions
+            functions.push(function);
         }
+
+        program.functions = functions;
 
         return program;
     }
 
-    fn next_function(&mut self) -> Option<Function> {
+    fn next_function(&mut self, functions: &mut Vec<Function>) -> Option<Function> {
         if let Some(token) = self.next_token() {
             if let TokenType::Identifier(function_name) = token.token_type {
                 self.next_colon();
 
                 let mut locals = LocalStack::new();
                 let arguments = self.next_args(&mut locals);
-                let body = self.next_scope(&mut locals);
+                let body = self.next_scope(&mut locals, functions);
 
                 let function = Some(Function {
                     name: function_name,
@@ -265,12 +270,12 @@ impl Parser {
         }
     }
 
-    fn next_scope(&mut self, locals: &mut LocalStack) -> Scope {
+    fn next_scope(&mut self, locals: &mut LocalStack, functions: &mut Vec<Function>) -> Scope {
         self.next_l_brace();
 
         let mut statements: Vec<Statement> = Vec::new();
 
-        while let Some(statement) = self.next_statement(locals) {
+        while let Some(statement) = self.next_statement(locals, functions) {
             statements.push(statement);
         }
 
@@ -279,12 +284,16 @@ impl Parser {
         return Scope { statements };
     }
 
-    fn next_statement(&mut self, locals: &mut LocalStack) -> Option<Statement> {
+    fn next_statement(
+        &mut self,
+        locals: &mut LocalStack,
+        functions: &mut Vec<Function>,
+    ) -> Option<Statement> {
         if let Some(token) = self.lookahead_token.clone() {
             match token.token_type {
                 TokenType::Return => {
                     self.next_token();
-                    return Some(self.next_return(locals));
+                    return Some(self.next_return(locals, functions));
                 }
                 TokenType::Identifier(name) => {
                     self.next_token();
@@ -292,7 +301,7 @@ impl Parser {
                     if let Some(token) = &self.lookahead_token {
                         match token.token_type {
                             TokenType::Equals => {
-                                return Some(self.next_assign(name, locals));
+                                return Some(self.next_assign(name, locals, functions));
                             }
                             _ => {
                                 panic!(
@@ -328,34 +337,151 @@ impl Parser {
         }
     }
 
-    fn next_assign(&mut self, identifier: String, locals: &mut LocalStack) -> Statement {
+    fn next_assign(
+        &mut self,
+        identifier: String,
+        locals: &mut LocalStack,
+        functions: &mut Vec<Function>,
+    ) -> Statement {
         self.next_equals();
 
         // FIXME: Don't hardcode local size
         let index = locals.insert(identifier, 8);
 
-        let statement = Statement::Assign(index, self.next_expression(locals));
+        let statement = Statement::Assign(index, self.next_expression(locals, functions, false));
 
         self.next_semicolon();
 
         return statement;
     }
 
-    fn next_return(&mut self, locals: &LocalStack) -> Statement {
-        let statement = Statement::Return(self.next_expression(locals));
+    fn next_return(&mut self, locals: &LocalStack, functions: &mut Vec<Function>) -> Statement {
+        let statement = Statement::Return(self.next_expression(locals, functions, false));
 
         self.next_semicolon();
 
         return statement;
     }
 
-    fn next_expression(&mut self, locals: &LocalStack) -> Expression {
+    fn next_call(&mut self, locals: &LocalStack, functions: &mut Vec<Function>) -> Expression {
+        self.next_at();
+
+        if let Some(token) = self.next_token() {
+            if let TokenType::Identifier(function_name) = token.token_type {
+                let index = match functions.iter().position(|f| f.name == function_name) {
+                    Some(index) => index,
+                    None => panic!(
+                        "{}:{}:{}: Call to undefined function.",
+                        self.lexer.filename, token.position.line, token.position.column
+                    ),
+                };
+
+                let args = self.next_call_args(locals, functions);
+
+                if args.len() != functions.get(index).unwrap().arguments.len() {
+                    panic!(
+                        "{}:{}:{}: Unmatched number of arguments.",
+                        self.lexer.filename, token.position.line, token.position.column
+                    );
+                }
+
+                return Expression::Call(index, args);
+            } else {
+                panic!(
+                    "{}:{}:{}: Expected fuction name.",
+                    self.lexer.filename, token.position.line, token.position.column
+                );
+            }
+        } else {
+            panic!(
+                "{}:{}:{}: Expected function name but reached end of file.",
+                self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
+            );
+        }
+    }
+
+    fn next_call_args(
+        &mut self,
+        locals: &LocalStack,
+        functions: &mut Vec<Function>,
+    ) -> Vec<Expression> {
+        self.next_l_par();
+
+        let mut expressions: Vec<Expression> = Vec::new();
+
+        while let Some(arg) = self.next_call_arg(locals, functions) {
+            expressions.push(arg);
+        }
+
+        self.next_r_par();
+
+        return expressions;
+    }
+
+    fn next_call_arg(
+        &mut self,
+        locals: &LocalStack,
+        functions: &mut Vec<Function>,
+    ) -> Option<Expression> {
+        if let Some(token) = &self.lookahead_token {
+            match token.token_type {
+                TokenType::RightPar => {
+                    return None;
+                }
+                TokenType::Comma => {
+                    if let Some(token_prev) = &self.current_token {
+                        if let TokenType::LeftPar = token_prev.token_type {
+                            panic!(
+                                "{}:{}:{}: Expected a expression.",
+                                self.lexer.filename, token.position.line, token.position.column
+                            );
+                        }
+                    }
+
+                    self.next_comma();
+                    return Some(self.next_expression(locals, functions, true));
+                }
+                _ => {
+                    return Some(self.next_expression(locals, functions, true));
+                }
+            }
+        } else {
+            panic!(
+                "{}:{}:{}: Expected call arguments but reached end of file.",
+                self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
+            );
+        }
+    }
+
+    fn next_expression(
+        &mut self,
+        locals: &LocalStack,
+        functions: &mut Vec<Function>,
+        call_arg: bool,
+    ) -> Expression {
         let mut queue: Vec<Token> = Vec::new();
 
         let mut stack: Vec<Token> = Vec::new();
 
+        let mut calls: Vec<Expression> = Vec::new();
+
+        let mut last_token: Option<Token> = None;
+
+        let mut end = false;
+
         while let Some(token) = self.lookahead_token.clone() {
+            last_token = Some(token.clone());
+
             match &token.token_type {
+                TokenType::Call(_) => {
+                    let call = self.next_call(locals, functions);
+                    calls.push(call);
+                    queue.push(Token {
+                        token_type: TokenType::Call(calls.len() - 1),
+                        position: token.position,
+                    });
+                    continue;
+                }
                 TokenType::Identifier(_) => {
                     if let Some(current_token) = &self.current_token {
                         if let TokenType::Identifier(_) = current_token.token_type {
@@ -422,6 +548,11 @@ impl Parser {
                     stack.push(token);
                 }
                 TokenType::RightPar => {
+                    if stack.len() == 0 && call_arg {
+                        end = true;
+                        break;
+                    }
+
                     let mut reached_left_par = false;
 
                     while let Some(token) = stack.pop() {
@@ -438,76 +569,36 @@ impl Parser {
                     }
 
                     if !reached_left_par {
+                        if call_arg {
+                            println!("tonoto 2");
+                            end = true;
+                            break;
+                        }
                         panic!(
                             "{}:{}:{}: Unmatched parenthesis.",
                             self.lexer.filename, token.position.line, token.position.column
                         );
                     }
                 }
-                TokenType::Semicolon | TokenType::Comma => {
-                    while let Some(token) = stack.pop() {
-                        if let TokenType::LeftPar | TokenType::RightPar = token.token_type {
-                            panic!(
-                                "{}:{}:{}: Unmatched parentheses.",
-                                self.lexer.filename, token.position.line, token.position.column
-                            );
-                        }
-                        queue.push(token);
-                    }
-
-                    let mut expressions: Vec<Expression> = Vec::new();
-
-                    for token in queue.iter() {
-                        match &token.token_type {
-                            TokenType::NumberLiteral(number) => {
-                                expressions.push(Expression::NumberLiteral(*number));
-                            }
-                            TokenType::Identifier(name) => {
-                                let index = match locals.get(name) {
-                                    Some(index) => index,
-                                    None => {
-                                        panic!(
-                                            "{}:{}:{}: Undeclared local.",
-                                            self.lexer.filename,
-                                            token.position.line,
-                                            token.position.column
-                                        );
-                                    }
-                                };
-                                expressions.push(Expression::Local(index));
-                            }
-                            TokenType::BinaryOperation(operator) => {
-                                if let (Some(right), Some(left)) =
-                                    (expressions.pop(), expressions.pop())
-                                {
-                                    expressions.push(Expression::Binary(BinaryExpression {
-                                        operator: operator.clone(),
-                                        left: Box::new(left),
-                                        right: Box::new(right),
-                                    }));
-                                } else {
-                                    panic!(
-                                        "{}:{}:{}: Missing operator.",
-                                        self.lexer.filename,
-                                        token.position.line,
-                                        token.position.column
-                                    );
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-
-                    if expressions.len() == 0 {
+                TokenType::Semicolon => {
+                    if call_arg {
                         panic!(
-                            "{}:{}:{}: Missing expression.",
+                            "{}:{}:{}: Unexpected token.",
                             self.lexer.filename, token.position.line, token.position.column
                         );
                     }
-
-                    assert!(expressions.len() == 1);
-
-                    return expressions.last().unwrap().to_owned();
+                    end = true;
+                    break;
+                }
+                TokenType::Comma => {
+                    if !call_arg {
+                        panic!(
+                            "{}:{}:{}: Unexpected token.",
+                            self.lexer.filename, token.position.line, token.position.column
+                        );
+                    }
+                    end = true;
+                    break;
                 }
                 _ => {
                     panic!(
@@ -520,10 +611,99 @@ impl Parser {
             self.next_token();
         }
 
-        panic!(
-            "{}:{}:{}: Expected expression but found end of file.",
-            self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
-        );
+        if end {
+            while let Some(token) = stack.pop() {
+                if let TokenType::LeftPar | TokenType::RightPar = token.token_type {
+                    panic!(
+                        "{}:{}:{}: Unmatched parentheses.",
+                        self.lexer.filename, token.position.line, token.position.column
+                    );
+                }
+                queue.push(token);
+            }
+
+            let mut expressions: Vec<Expression> = Vec::new();
+
+            for token in queue.iter() {
+                match &token.token_type {
+                    TokenType::Call(func) => {
+                        if let Some(expr) = calls.get(*func) {
+                            expressions.push(expr.clone());
+                        } else {
+                            panic!("Unreachable");
+                        }
+                    }
+                    TokenType::NumberLiteral(number) => {
+                        expressions.push(Expression::NumberLiteral(*number));
+                    }
+                    TokenType::Identifier(name) => {
+                        let index = match locals.get(name) {
+                            Some(index) => index,
+                            None => {
+                                panic!(
+                                    "{}:{}:{}: Undeclared local.",
+                                    self.lexer.filename, token.position.line, token.position.column
+                                );
+                            }
+                        };
+                        expressions.push(Expression::Local(index));
+                    }
+                    TokenType::BinaryOperation(operator) => {
+                        if let (Some(right), Some(left)) = (expressions.pop(), expressions.pop()) {
+                            expressions.push(Expression::Binary(BinaryExpression {
+                                operator: operator.clone(),
+                                left: Box::new(left),
+                                right: Box::new(right),
+                            }));
+                        } else {
+                            panic!(
+                                "{}:{}:{}: Missing operator.",
+                                self.lexer.filename, token.position.line, token.position.column
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            if let Some(token) = last_token {
+                if expressions.len() == 0 {
+                    panic!(
+                        "{}:{}:{}: Expected a expression.",
+                        self.lexer.filename, token.position.line, token.position.column
+                    );
+                }
+            } else {
+                panic!("Unreachable");
+            }
+
+            assert!(expressions.len() == 1);
+
+            return expressions.last().unwrap().to_owned();
+        } else {
+            panic!(
+                "{}:{}:{}: Expected expression but found end of file.",
+                self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
+            );
+        }
+    }
+
+    fn next_at(&mut self) {
+        if let Some(token) = self.next_token() {
+            if let TokenType::Call(_) = token.token_type {
+                return;
+            } else {
+                panic!(
+                    "{}:{}:{}: Expected a call token.",
+                    self.lexer.filename, token.position.line, token.position.column
+                );
+            }
+        } else {
+            panic!(
+                "{}:{}:{}: Expected a call token but reached end of file.",
+                self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
+            );
+        }
     }
 
     fn next_equals(&mut self) {

@@ -75,6 +75,7 @@ pub enum TokenType {
     UnaryInc,
     UnaryDec,
     BinaryOperation(BinaryOperator),
+    Call(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -125,6 +126,7 @@ impl Lexer {
             b'|' => Some(self.read_or()),
             b'^' => Some(self.read_xor()),
             b'!' => Some(self.read_not()),
+            b'@' => Some(self.read_call()),
             b'0'..=b'9' => Some(self.read_number_like()),
             b'a'..=b'z' | b'A'..b'Z' | b'_' => Some(self.read_identifier()),
             b'"' => Some(self.read_string()),
@@ -164,6 +166,15 @@ impl Lexer {
         while (c as char).is_whitespace() && !self.reached_eof {
             c = self.next_char();
         }
+    }
+
+    fn read_call(&mut self) -> Token {
+        let token = Token {
+            token_type: TokenType::Call(0),
+            position: self.file_position.clone(),
+        };
+        self.next_char();
+        return token;
     }
 
     fn read_not(&mut self) -> Token {

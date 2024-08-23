@@ -1,0 +1,21 @@
+foo: () { }
+
+sum: (a, b) {
+    return a + b;
+}
+
+mul: (a, b) {
+    return a * b;
+}
+
+double: (a) {
+    return @mul(a, 2);
+}
+
+main: (argc, argv) {
+    a = @sum(5, 15);
+    b = @double(a);
+    result = @sum(a, b) - 1;
+    return result;
+}
+
