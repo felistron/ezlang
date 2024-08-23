@@ -59,6 +59,7 @@ pub struct Scope {
 pub enum Statement {
     Assign(usize, Expression),
     Return(Expression),
+    Call(Expression),
 }
 
 #[derive(Debug, Clone)]
@@ -318,6 +319,11 @@ impl Parser {
                             self.lexer.file_position.column
                         );
                     }
+                }
+                TokenType::Call(_) => {
+                    let call = self.next_call(locals, functions);
+                    self.next_semicolon();
+                    return Some(Statement::Call(call));
                 }
                 TokenType::RightBrace => {
                     return None;
