@@ -1,15 +1,15 @@
 use crate::lexer::{BinaryOperator, Lexer, Token, TokenType};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Local {
-    size: usize,
-    offset: usize,
-    label: String,
+    pub size: usize,
+    pub offset: usize,
+    pub label: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LocalStack {
-    locals: Vec<Local>,
+    pub locals: Vec<Local>,
 }
 
 impl LocalStack {
@@ -18,7 +18,7 @@ impl LocalStack {
     }
 
     fn insert(&mut self, label: String, size: usize) -> usize {
-        return match self.get(&label) {
+        return match self.find(&label) {
             Some(index) => index,
             None => {
                 let offset = match self.locals.last() {
@@ -37,22 +37,33 @@ impl LocalStack {
         };
     }
 
-    fn get(&self, label: &str) -> Option<usize> {
+    fn find(&self, label: &str) -> Option<usize> {
         return self.locals.iter().position(|local| local.label == label);
+    }
+
+    pub fn get(&self, index: usize) -> Option<&Local> {
+        return self.locals.get(index);
+    }
+
+    pub fn get_size(&self) -> usize {
+        return match self.locals.last() {
+            Some(local) => local.offset + local.size,
+            None => 0,
+        };
     }
 }
 
 #[derive(Debug)]
 pub struct Function {
-    name: String,
-    locals: LocalStack,
-    arguments: Vec<usize>,
-    body: Scope,
+    pub name: String,
+    pub locals: LocalStack,
+    pub arguments: Vec<usize>,
+    pub body: Scope,
 }
 
 #[derive(Debug)]
 pub struct Scope {
-    statements: Vec<Statement>,
+    pub statements: Vec<Statement>,
 }
 
 #[derive(Debug)]
@@ -64,9 +75,9 @@ pub enum Statement {
 
 #[derive(Debug, Clone)]
 pub struct BinaryExpression {
-    operator: BinaryOperator,
-    left: Box<Expression>,
-    right: Box<Expression>,
+    pub operator: BinaryOperator,
+    pub left: Box<Expression>,
+    pub right: Box<Expression>,
 }
 
 #[derive(Debug, Clone)]
@@ -79,7 +90,7 @@ pub enum Expression {
 
 #[derive(Debug)]
 pub struct Program {
-    functions: Vec<Function>,
+    pub functions: Vec<Function>,
 }
 
 impl Program {
@@ -643,7 +654,7 @@ impl Parser {
                         expressions.push(Expression::NumberLiteral(*number));
                     }
                     TokenType::Identifier(name) => {
-                        let index = match locals.get(name) {
+                        let index = match locals.find(name) {
                             Some(index) => index,
                             None => {
                                 panic!(

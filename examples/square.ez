@@ -1,0 +1,18 @@
+square: (a) {
+    return a * a;
+}
+
+sub: (a, b) {
+    return a - b;
+}
+
+square_error: (a, b) {
+    return @square(@sub(a, b));
+}
+
+main: () {
+    a = 7;
+    b = 12;
+    e = @square_error(a, b);
+    return e;
+}

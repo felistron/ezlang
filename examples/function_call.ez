@@ -1,22 +1,14 @@
-foo: () { }
+double: (a) {
+    return 2 * a;
+}
 
 sum: (a, b) {
     return a + b;
 }
 
-mul: (a, b) {
-    return a * b;
-}
-
-double: (a) {
-    return @mul(a, 2);
-}
-
-main: (argc, argv) {
-    @foo();
-    a = @sum(5, 15);
+main: () {
+    a = 17;
     b = @double(a);
-    result = @sum(a, b) - 1;
-    return result;
+    c = @sum(@sum(30, 4) + 1, b);
+    return c;
 }
-
