@@ -53,7 +53,7 @@ impl LocalStack {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
     pub locals: LocalStack,
@@ -61,12 +61,12 @@ pub struct Function {
     pub body: Scope,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Scope {
     pub statements: Vec<Statement>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Assign(usize, Expression),
     Return(Expression),
@@ -107,6 +107,7 @@ pub struct Parser {
     position: usize,
     current_token: Option<Token>,
     lookahead_token: Option<Token>,
+    functions: Vec<Function>,
 }
 
 impl Parser {
@@ -117,6 +118,7 @@ impl Parser {
             position: 0,
             current_token: None,
             lookahead_token: None,
+            functions: Vec::new(),
         };
     }
 
@@ -131,6 +133,8 @@ impl Parser {
                 self.lexer.filename, 1, 1
             );
         }
+
+        self.lookahead_token = Some(self.tokens.get(0).expect("Unreachable").clone());
     }
 
     pub fn generate_program(&mut self) -> Program {
@@ -161,33 +165,44 @@ impl Parser {
     fn next_program(&mut self) -> Program {
         let mut program = Program::new();
 
-        let mut functions: Vec<Function> = Vec::new();
-
-        while let Some(function) = self.next_function(&mut functions) {
-            // TODO: Think about another way of storing functions
-            functions.push(function);
+        while let Some(token) = &self.lookahead_token {
+            match token.token_type {
+                TokenType::Function => {
+                    // TODO: Think about another way of storing functions
+                    let function = self.next_function();
+                    self.functions.push(function);
+                }
+                _ => {
+                    panic!(
+                        "{}:{}:{}: Unexpected token.",
+                        self.lexer.filename, token.position.line, token.position.column
+                    );
+                }
+            }
         }
 
-        program.functions = functions;
+        program.functions = self.functions.clone();
 
         return program;
     }
 
-    fn next_function(&mut self, functions: &mut Vec<Function>) -> Option<Function> {
+    fn next_function(&mut self) -> Function {
+        self.next_fn();
+
         if let Some(token) = self.next_token() {
             if let TokenType::Identifier(function_name) = token.token_type {
                 self.next_colon();
 
                 let mut locals = LocalStack::new();
                 let arguments = self.next_args(&mut locals);
-                let body = self.next_scope(&mut locals, functions);
+                let body = self.next_scope(&mut locals);
 
-                let function = Some(Function {
+                let function = Function {
                     name: function_name,
                     locals,
                     arguments,
                     body,
-                });
+                };
 
                 return function;
             } else {
@@ -196,9 +211,12 @@ impl Parser {
                     self.lexer.filename, token.position.line, token.position.column
                 );
             }
+        } else {
+            panic!(
+                "{}:{}:{}: Expected function name but reached end of file.",
+                self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
+            );
         }
-
-        return None;
     }
 
     fn next_args(&mut self, locals: &mut LocalStack) -> Vec<usize> {
@@ -282,12 +300,12 @@ impl Parser {
         }
     }
 
-    fn next_scope(&mut self, locals: &mut LocalStack, functions: &mut Vec<Function>) -> Scope {
+    fn next_scope(&mut self, locals: &mut LocalStack) -> Scope {
         self.next_l_brace();
 
         let mut statements: Vec<Statement> = Vec::new();
 
-        while let Some(statement) = self.next_statement(locals, functions) {
+        while let Some(statement) = self.next_statement(locals) {
             statements.push(statement);
         }
 
@@ -296,43 +314,21 @@ impl Parser {
         return Scope { statements };
     }
 
-    fn next_statement(
-        &mut self,
-        locals: &mut LocalStack,
-        functions: &mut Vec<Function>,
-    ) -> Option<Statement> {
+    fn next_statement(&mut self, locals: &mut LocalStack) -> Option<Statement> {
         if let Some(token) = self.lookahead_token.clone() {
             match token.token_type {
                 TokenType::Return => {
                     self.next_token();
-                    return Some(self.next_return(locals, functions));
+                    return Some(self.next_return(locals));
                 }
-                TokenType::Identifier(name) => {
-                    self.next_token();
-
-                    if let Some(token) = &self.lookahead_token {
-                        match token.token_type {
-                            TokenType::Equals => {
-                                return Some(self.next_assign(name, locals, functions));
-                            }
-                            _ => {
-                                panic!(
-                                    "{}:{}:{}: Unexpected token.",
-                                    self.lexer.filename, token.position.line, token.position.column
-                                );
-                            }
-                        }
-                    } else {
-                        panic!(
-                            "{}:{}:{}: Expected statement but reached end of file.",
-                            self.lexer.filename,
-                            self.lexer.file_position.line,
-                            self.lexer.file_position.column
-                        );
-                    }
+                TokenType::Var => {
+                    return Some(self.next_var_declaration(locals));
+                }
+                TokenType::Identifier(_) => {
+                    return Some(self.next_assign(locals));
                 }
                 TokenType::Call(_) => {
-                    let call = self.next_call(locals, functions);
+                    let call = self.next_call(locals);
                     self.next_semicolon();
                     return Some(Statement::Call(call));
                 }
@@ -354,38 +350,91 @@ impl Parser {
         }
     }
 
-    fn next_assign(
-        &mut self,
-        identifier: String,
-        locals: &mut LocalStack,
-        functions: &mut Vec<Function>,
-    ) -> Statement {
-        self.next_equals();
+    fn next_var_declaration(&mut self, locals: &mut LocalStack) -> Statement {
+        self.next_var();
 
-        // FIXME: Don't hardcode local size
-        let index = locals.insert(identifier, 8);
+        if let Some(token) = self.next_token() {
+            if let TokenType::Identifier(name) = token.token_type {
+                self.next_equals();
 
-        let statement = Statement::Assign(index, self.next_expression(locals, functions, false));
+                if let Some(_) = locals.find(&name) {
+                    panic!(
+                        "{}:{}:{}: Duplicated variable declaration.",
+                        self.lexer.filename, token.position.line, token.position.column
+                    );
+                }
+
+                // FIXME: Don't hardcode size
+                let index = locals.insert(name, 8);
+
+                let statement = Statement::Assign(index, self.next_expression(locals, false));
+
+                self.next_semicolon();
+
+                return statement;
+            } else {
+                panic!(
+                    "{}:{}:{}: Expected identifier.",
+                    self.lexer.filename, token.position.line, token.position.column
+                );
+            }
+        } else {
+            panic!(
+                "{}:{}:{}: Expected identifier but reached end of file.",
+                self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
+            );
+        }
+    }
+
+    fn next_assign(&mut self, locals: &mut LocalStack) -> Statement {
+        if let Some(token) = self.next_token() {
+            if let TokenType::Identifier(name) = token.token_type {
+                self.next_equals();
+
+                match locals.find(&name) {
+                    Some(index) => {
+                        let statement =
+                            Statement::Assign(index, self.next_expression(locals, false));
+
+                        self.next_semicolon();
+
+                        return statement;
+                    }
+                    None => {
+                        panic!(
+                            "{}:{}:{}: Undeclared variable.",
+                            self.lexer.filename, token.position.line, token.position.column
+                        );
+                    }
+                }
+            } else {
+                panic!(
+                    "{}:{}:{}: Expected identifier.",
+                    self.lexer.filename, token.position.line, token.position.column
+                );
+            }
+        } else {
+            panic!(
+                "{}:{}:{}: Expected identifier but reached end of file.",
+                self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
+            );
+        }
+    }
+
+    fn next_return(&mut self, locals: &LocalStack) -> Statement {
+        let statement = Statement::Return(self.next_expression(locals, false));
 
         self.next_semicolon();
 
         return statement;
     }
 
-    fn next_return(&mut self, locals: &LocalStack, functions: &mut Vec<Function>) -> Statement {
-        let statement = Statement::Return(self.next_expression(locals, functions, false));
-
-        self.next_semicolon();
-
-        return statement;
-    }
-
-    fn next_call(&mut self, locals: &LocalStack, functions: &mut Vec<Function>) -> Expression {
+    fn next_call(&mut self, locals: &LocalStack) -> Expression {
         self.next_at();
 
         if let Some(token) = self.next_token() {
             if let TokenType::Identifier(function_name) = token.token_type {
-                let index = match functions.iter().position(|f| f.name == function_name) {
+                let index = match self.functions.iter().position(|f| f.name == function_name) {
                     Some(index) => index,
                     None => panic!(
                         "{}:{}:{}: Call to undefined function.",
@@ -393,9 +442,9 @@ impl Parser {
                     ),
                 };
 
-                let args = self.next_call_args(locals, functions);
+                let args = self.next_call_args(locals);
 
-                if args.len() != functions.get(index).unwrap().arguments.len() {
+                if args.len() != self.functions.get(index).unwrap().arguments.len() {
                     panic!(
                         "{}:{}:{}: Unmatched number of arguments.",
                         self.lexer.filename, token.position.line, token.position.column
@@ -417,16 +466,12 @@ impl Parser {
         }
     }
 
-    fn next_call_args(
-        &mut self,
-        locals: &LocalStack,
-        functions: &mut Vec<Function>,
-    ) -> Vec<Expression> {
+    fn next_call_args(&mut self, locals: &LocalStack) -> Vec<Expression> {
         self.next_l_par();
 
         let mut expressions: Vec<Expression> = Vec::new();
 
-        while let Some(arg) = self.next_call_arg(locals, functions) {
+        while let Some(arg) = self.next_call_arg(locals) {
             expressions.push(arg);
         }
 
@@ -435,11 +480,7 @@ impl Parser {
         return expressions;
     }
 
-    fn next_call_arg(
-        &mut self,
-        locals: &LocalStack,
-        functions: &mut Vec<Function>,
-    ) -> Option<Expression> {
+    fn next_call_arg(&mut self, locals: &LocalStack) -> Option<Expression> {
         if let Some(token) = &self.lookahead_token {
             match token.token_type {
                 TokenType::RightPar => {
@@ -456,10 +497,10 @@ impl Parser {
                     }
 
                     self.next_comma();
-                    return Some(self.next_expression(locals, functions, true));
+                    return Some(self.next_expression(locals, true));
                 }
                 _ => {
-                    return Some(self.next_expression(locals, functions, true));
+                    return Some(self.next_expression(locals, true));
                 }
             }
         } else {
@@ -470,12 +511,7 @@ impl Parser {
         }
     }
 
-    fn next_expression(
-        &mut self,
-        locals: &LocalStack,
-        functions: &mut Vec<Function>,
-        call_arg: bool,
-    ) -> Expression {
+    fn next_expression(&mut self, locals: &LocalStack, call_arg: bool) -> Expression {
         let mut queue: Vec<Token> = Vec::new();
 
         let mut stack: Vec<Token> = Vec::new();
@@ -491,7 +527,7 @@ impl Parser {
 
             match &token.token_type {
                 TokenType::Call(_) => {
-                    let call = self.next_call(locals, functions);
+                    let call = self.next_call(locals);
                     calls.push(call);
                     queue.push(Token {
                         token_type: TokenType::Call(calls.len() - 1),
@@ -856,6 +892,42 @@ impl Parser {
         } else {
             panic!(
                 "{}:{}:{}: Expected left parentheses token but reached end of file.",
+                self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
+            );
+        }
+    }
+
+    fn next_fn(&mut self) {
+        if let Some(token) = self.next_token() {
+            if let TokenType::Function = token.token_type {
+                return;
+            } else {
+                panic!(
+                    "{}:{}:{}: Expected function declaration (fn).",
+                    self.lexer.filename, token.position.line, token.position.column
+                );
+            }
+        } else {
+            panic!(
+                "{}:{}:{}: Expected function declaration (fn) token but reached end of file.",
+                self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
+            );
+        }
+    }
+
+    fn next_var(&mut self) {
+        if let Some(token) = self.next_token() {
+            if let TokenType::Var = token.token_type {
+                return;
+            } else {
+                panic!(
+                    "{}:{}:{}: Expected var token.",
+                    self.lexer.filename, token.position.line, token.position.column
+                );
+            }
+        } else {
+            panic!(
+                "{}:{}:{}: Expected var token but reached end of file.",
                 self.lexer.filename, self.lexer.file_position.line, self.lexer.file_position.column
             );
         }

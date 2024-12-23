@@ -1,14 +1,14 @@
-double: (a) {
+fn double: (a) {
     return 2 * a;
 }
 
-sum: (a, b) {
+fn sum: (a, b) {
     return a + b;
 }
 
-main: () {
-    a = 17;
-    b = @double(a);
-    c = @sum(@sum(30, 4) + 1, b);
+fn main: () {
+    var a = 17;
+    var b = @double(a);
+    var c = @sum(@sum(30, 4) + 1, b);
     return c;
 }

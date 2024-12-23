@@ -1,18 +1,19 @@
-square: (a) {
+fn square: (a) {
     return a * a;
 }
 
-sub: (a, b) {
+fn sub: (a, b) {
     return a - b;
 }
 
-square_error: (a, b) {
+fn square_error: (a, b) {
     return @square(@sub(a, b));
 }
 
-main: () {
-    a = 7;
-    b = 12;
-    e = @square_error(a, b);
+fn main: () {
+    var a = 7;
+    var b = 12;
+    var e = @square_error(a, b);
     return e;
 }
+

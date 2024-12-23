@@ -1,7 +1,7 @@
-main: (argc, argv) {
-    a = 10;
-    b = 20;
-    var = a + b - argc * 2;
-    return var;
+fn main: () {
+    var a = 10;
+    var b = 20;
+    var c = a + b * 2;
+    return c;
 }
 

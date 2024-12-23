@@ -57,6 +57,8 @@ pub enum TokenType {
     StringLiteral(String),
     Character(char),
     Identifier(String),
+    Function,
+    Var,
     Return,
     If,
     While,
@@ -461,6 +463,14 @@ impl Lexer {
             },
             "false" => Token {
                 token_type: TokenType::False,
+                position: current_position,
+            },
+            "fn" => Token {
+                token_type: TokenType::Function,
+                position: current_position,
+            },
+            "var" => Token {
+                token_type: TokenType::Var,
                 position: current_position,
             },
             _ => Token {
